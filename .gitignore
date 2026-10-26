@@ -1,0 +1,22 @@
+# Python environment and caches
+python311/
+.venv/
+.cache/
+__pycache__/
+*.pyc
+*.pyo
+
+# Installer and system logs
+*.log
+py_install*.log
+
+# Large raw datasets
+LUCAS-SOIL-2018-data-report-readme-v2/
+data/raw/
+*.csv.gz
+
+# OS and temporary editor files
+~$*
+*.tmp
+Thumbs.db
+.DS_Store

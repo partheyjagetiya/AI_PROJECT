@@ -75,6 +75,32 @@ def load_lucas_2018_properties(
     return df_clean, y, coords
 
 
+def load_lucas_with_spectra(
+    props_csv: str,
+    spectra_csv: str,
+    id_col: str = "POINTID",
+    n_bands: int = 486
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Joins official laboratory properties to raw ESDAC spectrometer scan CSV on id_col.
+    
+    Resamples raw spectral channels to continuous 486 bands (400 - 2450 nm).
+    Returns X (spectra), y (properties), target_wl (wavelengths), coords (lat/lon).
+    """
+    df, y_all, c_all = load_lucas_2018_properties(props_csv)
+    sp = pd.read_csv(spectra_csv)
+    wl_cols = [c for c in sp.columns if c != id_col]
+    wl = np.array([float(c.replace("wl_", "")) for c in wl_cols])
+    merged = df[[id_col]].reset_index().merge(sp, on=id_col, how="inner")
+    if len(merged) == 0:
+        raise ValueError(f"No matching '{id_col}' between properties and spectra files.")
+    rows = merged["index"].to_numpy()
+    raw = merged[wl_cols].to_numpy(np.float64)
+    target_wl = np.linspace(400.0, 2450.0, n_bands)
+    X = np.stack([np.interp(target_wl, wl, r) for r in raw]).astype(np.float32)
+    keep = np.isfinite(X).all(axis=1) & (X > 0).all(axis=1)
+    return X[keep], y_all[rows][keep], target_wl, c_all[rows][keep]
+
+
 def load_lucas_data(
     spectra_path: str = "data/raw/lucas_topsoil_spectra.csv",
     properties_path: str = "data/raw/lucas_topsoil_properties.csv"

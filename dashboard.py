@@ -266,6 +266,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
     .tier-b { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
     .tier-c { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .tier-d { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
     .metric-value { font-size: 32px; font-weight: 900; color: #fff; margin-top: 10px; }
     .metric-unit { font-size: 14px; font-weight: 600; color: #94a3b8; margin-left: 4px; }
     .metric-sub {
@@ -382,7 +383,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     <div class="card metric-card">
       <div class="metric-header">
         <span class="metric-title">Total Nitrogen (N)</span>
-        <span class="tier-tag tier-b" id="tier-n">Tier B: Good</span>
+        <span class="tier-tag tier-c" id="tier-n">Tier C: Fair</span>
       </div>
       <div class="metric-value"><span id="val-n">--</span><span class="metric-unit">g/kg</span></div>
       <div class="metric-sub"><span>Validation RPD: <strong>2.46</strong></span><span>R² = <strong>0.835</strong></span></div>
@@ -390,7 +391,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     <div class="card metric-card">
       <div class="metric-header">
         <span class="metric-title">Available Phosphorus (P)</span>
-        <span class="tier-tag tier-c" id="tier-p">Tier C: Fair</span>
+        <span class="tier-tag tier-d" id="tier-p">Tier D: Screening</span>
       </div>
       <div class="metric-value"><span id="val-p">--</span><span class="metric-unit">mg/kg</span></div>
       <div class="metric-sub"><span>Validation RPD: <strong>1.78</strong></span><span>R² = <strong>0.684</strong></span></div>
@@ -398,7 +399,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     <div class="card metric-card">
       <div class="metric-header">
         <span class="metric-title">Extractable Potassium (K)</span>
-        <span class="tier-tag tier-c" id="tier-k">Tier C: Fair</span>
+        <span class="tier-tag tier-d" id="tier-k">Tier D: Screening</span>
       </div>
       <div class="metric-value"><span id="val-k">--</span><span class="metric-unit">mg/kg</span></div>
       <div class="metric-sub"><span>Validation RPD: <strong>1.86</strong></span><span>R² = <strong>0.712</strong></span></div>

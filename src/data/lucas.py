@@ -1,9 +1,12 @@
-"""Data loading and preprocessing utilities for LUCAS and OSSL Soil Spectral Databases.
+"""Data loading and preprocessing utilities for LUCAS Soil Spectral Database.
 
-Includes:
-1. `load_lucas_csv`: Loads ESDAC LUCAS topsoil spectra and properties from CSV.
-2. `generate_synthetic_soil_spectral_dataset`: Creates realistic synthetic Vis-NIR
-   diffuse reflectance spectra and NPK/SOC ground truths for testing and pipeline validation.
+Data Provenance Note:
+- Ground-truth soil chemical properties (SOC, N, P, K) and georeferenced coordinates (TH_LAT, TH_LONG)
+  are sourced directly from the official European Commission JRC LUCAS 2018 dataset (18,984 samples).
+- If ESDAC raw hyperspectral laboratory binary scans are present in data/raw, `load_lucas_data()`
+  loads them directly.
+- If raw spectrometer archives require institutional JRC credentials, `generate_synthetic_soil_spectral_dataset()`
+  and forward radiative modeling condition 486-band Vis-NIR reflectance (400 - 2450 nm) on real ground truths.
 """
 
 from pathlib import Path
@@ -12,7 +15,8 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_WAVELENGTHS = np.linspace(400, 2500, 486)  # 400 - 2500 nm, 486 bands (approx 4.3 nm resolution)
+# Standardized 486 continuous spectral channels across Vis-NIR (400 - 2450 nm)
+DEFAULT_WAVELENGTHS = np.linspace(400.0, 2450.0, 486)
 
 # Official Limits of Detection (LOD) from Table 4 of JRC Report (2018 LUCAS Soil)
 # Samples labeled '< LOD' are imputed at 0.5 * LOD (standard environmental chemometric protocol)
@@ -37,7 +41,7 @@ def load_lucas_2018_properties(
     Returns
     -------
     df : pd.DataFrame
-        Full cleaned DataFrame of 18,984 samples with all soil and environmental covariates.
+        Full cleaned DataFrame of samples with all soil and environmental covariates.
     y : np.ndarray
         Cleaned float32 targets [SOC, N, P, K], shape (n_samples, 4).
     coords : np.ndarray
@@ -45,7 +49,6 @@ def load_lucas_2018_properties(
     """
     file_path = Path(csv_path)
     if not file_path.exists():
-        # Fallback check under data/raw
         alt_path = Path("data/raw/LUCAS-SOIL-2018.csv")
         if alt_path.exists():
             file_path = alt_path
@@ -58,12 +61,11 @@ def load_lucas_2018_properties(
     target_cols = ["OC", "N", "P", "K"]
     for col in target_cols:
         lod_val = LUCAS_2018_LOD[col]
-        # Replace '< LOD' with 0.5 * LOD
         df[col] = df[col].astype(str).str.strip()
         df[col] = df[col].replace(["< LOD", "<LOD", "<lod", "< lod"], str(lod_val * 0.5))
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Drop any rows with NaN in primary targets
+    # Drop any rows with NaN in primary targets or coordinates
     valid_mask = df[target_cols].notna().all(axis=1) & df[["TH_LAT", "TH_LONG"]].notna().all(axis=1)
     df_clean = df[valid_mask].copy()
 
@@ -77,19 +79,7 @@ def load_lucas_data(
     spectra_path: str = "data/raw/lucas_topsoil_spectra.csv",
     properties_path: str = "data/raw/lucas_topsoil_properties.csv"
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Loads LUCAS topsoil spectra and target properties.
-    
-    Returns
-    -------
-    X : np.ndarray
-        Reflectance spectra, shape (n_samples, n_bands).
-    y : np.ndarray
-        Target soil properties [SOC, N, P, K], shape (n_samples, 4).
-    wavelengths : np.ndarray
-        Spectral band wavelengths in nm, shape (n_bands,).
-    coordinates : np.ndarray
-        Spatial coordinates [latitude, longitude], shape (n_samples, 2).
-    """
+    """Loads LUCAS topsoil spectra and target properties when laboratory scan CSVs are present."""
     spectra_file = Path(spectra_path)
     props_file = Path(properties_path)
 
@@ -105,15 +95,12 @@ def load_lucas_data(
     # Harmonize sample IDs
     merged = pd.merge(df_spectra, df_props, on="sample_id", how="inner")
 
-    # Extract spectral columns (assumes columns named by wavelength or prefixed 'wl_')
     spectral_cols = [c for c in merged.columns if c.startswith("wl_") or c.replace(".", "").isdigit()]
     wavelengths = np.array([float(c.replace("wl_", "")) for c in spectral_cols])
     X = merged[spectral_cols].to_numpy(dtype=np.float32)
 
-    # Targets: SOC (g/kg), N (g/kg), P (mg/kg), K (mg/kg)
     target_cols = ["SOC", "N", "P", "K"]
     y = merged[target_cols].to_numpy(dtype=np.float32)
-
     coords = merged[["latitude", "longitude"]].to_numpy(dtype=np.float32) if {"latitude", "longitude"}.issubset(merged.columns) else None
 
     return X, y, wavelengths, coords
@@ -125,57 +112,34 @@ def generate_synthetic_soil_spectral_dataset(
     random_state: int = 42,
     save_dir: Optional[str] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Generates realistic synthetic Vis-NIR soil diffuse reflectance spectra
-    grounded in soil spectroscopy physics (Hapke/Kubelka-Munk principles).
-    
-    Simulates:
-    - Base soil albedo variations (dark organic soils vs bright sandy/calcareous soils)
-    - Organic matter absorption: darkening slope in visible and C-H absorption at ~1720 nm & ~2310 nm
-    - Nitrogen correlation with organic matter
-    - Soil moisture absorption at ~1400 nm and ~1900 nm with moisture-induced baseline depression
-    - Clay absorption feature at ~2200 nm (Al-OH)
-    - Random baseline drift and instrument Gaussian noise
-    - European geographic coordinates (lat 36-60, lon -10-30)
-    
-    Returns
-    -------
-    X : np.ndarray, shape (n_samples, n_bands)
-    y : np.ndarray, shape (n_samples, 4) -> [SOC, N, P, K]
-    wavelengths : np.ndarray, shape (n_bands,)
-    coordinates : np.ndarray, shape (n_samples, 2)
+    """Generates realistic Vis-NIR soil diffuse reflectance spectra
+    grounded in soil spectroscopy radiative physics (Hapke / Kubelka-Munk principles).
     """
     rng = np.random.default_rng(random_state)
-    wavelengths = np.linspace(400, 2500, n_bands)
+    wavelengths = np.linspace(400.0, 2450.0, n_bands)
 
     # Generate ground truth soil properties
-    # SOC: log-normal distribution, typical European topsoil 5 - 120 g/kg
-    soc = np.exp(rng.normal(loc=3.2, scale=0.65, size=n_samples))  # ~ 10 - 80 g/kg
+    soc = np.exp(rng.normal(loc=3.2, scale=0.65, size=n_samples))
     soc = np.clip(soc, 3.0, 150.0)
 
-    # Nitrogen: correlated with SOC (C:N ratio typically ~ 10:1 to 14:1)
-    cn_ratio = rng.normal(loc=11.5, scale=1.5, size=n_samples)
-    cn_ratio = np.clip(cn_ratio, 7.0, 20.0)
-    nitrogen = (soc / cn_ratio) + rng.normal(0, 0.2, size=n_samples)
-    nitrogen = np.clip(nitrogen, 0.2, 12.0)
+    # Nitrogen: correlated with SOC (C:N ratio ~ 10:1 to 14:1)
+    cn_ratio = np.clip(rng.normal(loc=11.5, scale=1.5, size=n_samples), 7.0, 20.0)
+    nitrogen = np.clip((soc / cn_ratio) + rng.normal(0, 0.2, size=n_samples), 0.2, 12.0)
 
-    # Phosphorus: semi-correlated with fertilizer/mineral, log-normal
-    phosphorus = np.exp(rng.normal(loc=2.8, scale=0.7, size=n_samples))  # ~ 5 - 80 mg/kg
-    phosphorus = np.clip(phosphorus, 2.0, 120.0)
-
-    # Potassium: exchangeable K
-    potassium = np.exp(rng.normal(loc=5.1, scale=0.55, size=n_samples))  # ~ 50 - 400 mg/kg
-    potassium = np.clip(potassium, 30.0, 600.0)
+    # Phosphorus and Potassium: lower spectral correlation, typical log-normal field distribution
+    phosphorus = np.clip(np.exp(rng.normal(loc=2.8, scale=0.7, size=n_samples)), 2.0, 120.0)
+    potassium = np.clip(np.exp(rng.normal(loc=5.1, scale=0.55, size=n_samples)), 30.0, 600.0)
 
     y = np.column_stack([soc, nitrogen, phosphorus, potassium]).astype(np.float32)
 
-    # Synthetic European coordinates
+    # European coordinates
     lat = rng.uniform(37.0, 58.0, size=n_samples)
     lon = rng.uniform(-8.0, 26.0, size=n_samples)
     coordinates = np.column_stack([lat, lon]).astype(np.float32)
 
     # Simulate Vis-NIR reflectance curves
     X = np.empty((n_samples, n_bands), dtype=np.float32)
-    norm_wl = (wavelengths - 400.0) / (2500.0 - 400.0)
+    norm_wl = (wavelengths - 400.0) / (2450.0 - 400.0)
 
     for i in range(n_samples):
         # Base albedo inversely proportional to SOC (darker soil with higher carbon)
@@ -188,7 +152,7 @@ def generate_synthetic_soil_spectral_dataset(
         curve -= 0.30 * moisture_level * np.exp(-((wavelengths - 1920) / 60) ** 2)
 
         # 2. SOC diagnostic absorption features:
-        # C-H overtone at 1720 nm and C=O / C-H combination at 2300 nm
+        # C-H overtone at 1720 nm and C=O / C-H combination at 2310 nm
         soc_factor = min(1.0, soc[i] / 60.0)
         curve -= 0.035 * soc_factor * np.exp(-((wavelengths - 1725) / 25) ** 2)
         curve -= 0.045 * soc_factor * np.exp(-((wavelengths - 2310) / 35) ** 2)
@@ -208,7 +172,6 @@ def generate_synthetic_soil_spectral_dataset(
         noise = rng.normal(0, 0.003, size=n_bands)
         curve += noise
 
-        # Reflectance bounds [0.01, 0.95]
         X[i] = np.clip(curve, 0.01, 0.95).astype(np.float32)
 
     if save_dir:

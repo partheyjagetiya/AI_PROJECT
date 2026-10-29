@@ -23,9 +23,9 @@ class SoilSpectralCNN(nn.Module):
         Parameters
         ----------
         n_bands : int
-            Number of spectral bands (default 486, e.g. Vis-NIR resampled).
+            Number of spectral bands (default 486, 400 - 2450 nm).
         n_targets : int
-            Number of output soil properties (typically 4: SOC, N, P, K).
+            Number of output soil properties (SOC, N, P, K).
         dropout : float
             Dropout probability for regularization.
         base_channels : int
@@ -52,7 +52,7 @@ class SoilSpectralCNN(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool1d(2),
 
-            # Block 3: Sharp diagnostic peak / dip features (e.g. 1400, 1900, 2200 nm)
+            # Block 3: Sharp diagnostic peak / dip features (1400, 1720, 1900, 2205, 2310 nm)
             nn.Conv1d(c2, c3, kernel_size=5, padding=2, bias=False),
             nn.BatchNorm1d(c3),
             nn.ReLU(inplace=True),
@@ -89,7 +89,7 @@ class SoilSpectralCNN(nn.Module):
 
 
 class ResidualBlock1D(nn.Module):
-    """Optional residual block for deeper soil spectral architectures."""
+    """Residual block for deeper soil spectral architectures."""
 
     def __init__(self, channels: int, kernel_size: int = 5):
         super().__init__()

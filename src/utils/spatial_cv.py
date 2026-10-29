@@ -1,8 +1,8 @@
 """Spatial Block Cross-Validation for geospatial soil spectral data.
 
-Prevents spatial autocorrelation leakage (samples collected in close geographic proximity
-having artificially inflated validation scores) by clustering geographic coordinates
-into spatial spatial blocks / folds.
+Mitigates spatial autocorrelation (Tobler's First Law of Geography)
+by clustering geographic coordinates into distinct spatial blocks (~50 km)
+and assigning contiguous regional clusters to validation folds.
 """
 
 from typing import Generator, List, Optional, Tuple
@@ -14,8 +14,8 @@ from sklearn.model_selection import KFold
 class SpatialBlockCV:
     """Spatial Block Cross-Validation.
     
-    Clusters coordinates (lat, lon) into geographic spatial blocks or groups,
-    ensuring that validation folds are spatially disjoint from training folds.
+    Clusters coordinates (lat, lon) into geographic spatial blocks,
+    ensuring that validation folds represent separate geographic regions.
     """
 
     def __init__(self, n_splits: int = 5, block_size_km: float = 50.0, random_state: int = 42):
@@ -23,65 +23,47 @@ class SpatialBlockCV:
         self.block_size_km = block_size_km
         self.random_state = random_state
 
+    def _to_km(self, coordinates: np.ndarray) -> np.ndarray:
+        coords = np.asarray(coordinates, dtype=np.float64)
+        mean_lat = np.radians(np.mean(coords[:, 0]))
+        coords_km = np.empty_like(coords)
+        coords_km[:, 0] = coords[:, 0] * 111.0
+        coords_km[:, 1] = coords[:, 1] * (111.0 * np.cos(mean_lat))
+        return coords_km
+
     def split(
         self,
         X: np.ndarray,
         y: Optional[np.ndarray] = None,
         coordinates: Optional[np.ndarray] = None
     ) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
-        """Generate indices to split data into training and test set.
-        
-        Parameters
-        ----------
-        X : np.ndarray
-            Spectral samples, shape (n_samples, n_features).
-        y : np.ndarray, optional
-            Target values, shape (n_samples, n_targets).
-        coordinates : np.ndarray, optional
-            Geographic coordinates [latitude, longitude] in decimal degrees, shape (n_samples, 2).
-            If None or not provided, falls back to regular KFold.
-            
-        Yields
-        ------
-        train_idx : np.ndarray
-        val_idx : np.ndarray
-        """
+        """Generate indices to split data into training and test set."""
         n_samples = len(X)
 
         if coordinates is None or len(coordinates) != n_samples:
-            # Fallback to standard KFold if coordinates not provided
             kf = KFold(n_splits=self.n_splits, shuffle=True, random_state=self.random_state)
             yield from kf.split(X)
             return
 
-        coords = np.asarray(coordinates, dtype=np.float64)
+        coords_km = self._to_km(coordinates)
 
-        # Approximate conversion of degrees to km
-        # 1 degree latitude ~ 111 km, longitude scaled by cos(lat)
-        mean_lat = np.radians(np.mean(coords[:, 0]))
-        coords_km = np.empty_like(coords)
-        coords_km[:, 0] = coords[:, 0] * 111.0
-        coords_km[:, 1] = coords[:, 1] * (111.0 * np.cos(mean_lat))
-
-        # Determine number of spatial clusters based on bounding box and block_size_km
         span_x = np.ptp(coords_km[:, 1])
         span_y = np.ptp(coords_km[:, 0])
         approx_clusters = max(
             self.n_splits * 2,
             int(np.ceil((span_x * span_y) / (self.block_size_km ** 2)))
         )
-        # Cap clusters to avoid tiny single-element clusters
-        n_clusters = min(approx_clusters, max(self.n_splits, n_samples // 10))
+        n_clusters = min(approx_clusters, max(self.n_splits * 2, n_samples // 12))
 
-        # Spatial clustering into blocks
+        # Spatial clustering into geographic blocks
         kmeans = KMeans(n_clusters=n_clusters, random_state=self.random_state, n_init="auto")
         block_labels = kmeans.fit_predict(coords_km)
+        centers = kmeans.cluster_centers_
 
-        # Distribute cluster blocks across n_splits folds
-        unique_blocks = np.unique(block_labels)
-        rng = np.random.default_rng(self.random_state)
-        rng.shuffle(unique_blocks)
-        block_splits = np.array_split(unique_blocks, self.n_splits)
+        # Spatially sort clusters along principal spatial axis (e.g. West-East longitude projection)
+        # to ensure folds represent contiguous regional sectors rather than interspersed blocks
+        sorted_blocks = np.argsort(centers[:, 1])
+        block_splits = np.array_split(sorted_blocks, self.n_splits)
 
         for fold_blocks in block_splits:
             val_mask = np.isin(block_labels, fold_blocks)
@@ -90,4 +72,19 @@ class SpatialBlockCV:
             if len(val_idx) > 0 and len(train_idx) > 0:
                 yield train_idx, val_idx
 
+    @staticmethod
+    def calculate_min_spatial_distance_km(coords: np.ndarray, train_idx: np.ndarray, val_idx: np.ndarray) -> float:
+        """Computes minimum pairwise Euclidean geographic distance in km between train and val folds."""
+        mean_lat = np.radians(np.mean(coords[:, 0]))
+        c_km = np.empty_like(coords, dtype=np.float64)
+        c_km[:, 0] = coords[:, 0] * 111.0
+        c_km[:, 1] = coords[:, 1] * (111.0 * np.cos(mean_lat))
 
+        # Subsample if large to compute quickly
+        t_sample = c_km[train_idx[:min(500, len(train_idx))]]
+        v_sample = c_km[val_idx[:min(200, len(val_idx))]]
+
+        # Distance matrix
+        diff = t_sample[:, np.newaxis, :] - v_sample[np.newaxis, :, :]
+        dist = np.sqrt(np.sum(diff ** 2, axis=-1))
+        return float(np.min(dist))

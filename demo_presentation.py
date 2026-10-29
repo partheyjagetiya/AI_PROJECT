@@ -82,9 +82,9 @@ def run_live_demo():
         print(f"  --> Model Memory Footprint: {onnx_path.stat().st_size / (1024*1024):.2f} MB (Embedded CPU Ready)")
         print("\n  SAMPLE LIVE INFERENCE OUTPUT:")
         print(f"    * Estimated Soil Organic Carbon (SOC) : {soc_pred:6.2f} g/kg   [Tier B: Good]")
-        print(f"    * Estimated Total Nitrogen (N)        : {n_pred:6.2f} g/kg   [Tier B: Good]")
-        print(f"    * Estimated Available Phosphorus (P)  : {p_pred:6.2f} mg/kg  [Tier C: Fair]")
-        print(f"    * Estimated Extractable Potassium (K) : {k_pred:6.2f} mg/kg  [Tier C: Fair]")
+        print(f"    * Estimated Total Nitrogen (N)        : {n_pred:6.2f} g/kg   [Tier C: Fair]")
+        print(f"    * Estimated Available Phosphorus (P)  : {p_pred:6.2f} mg/kg  [Tier D: Screening]")
+        print(f"    * Estimated Extractable Potassium (K) : {k_pred:6.2f} mg/kg  [Tier D: Screening]")
 
     except Exception as e:
         lat_ms = 6.89
@@ -96,12 +96,12 @@ def run_live_demo():
     print(f"  {'Analyte':<20} | {'PLSR (Baseline)':<16} | {'Cao et al. (Base)':<18} | {'Our 1D-CNN (SpatialCV)':<20}")
     print("-" * 78)
     print(f"  {'SOC (g/kg)':<20} | R^2=0.864 (Tier B) | R^2=0.940 (Tier A)* | R^2=0.887, RPD=2.97 (Tier B)")
-    print(f"  {'Total N (g/kg)':<20} | R^2=0.742 (Tier C) | R^2=0.940 (Tier A)* | R^2=0.835, RPD=2.46 (Tier B)")
-    print(f"  {'Avail. P (mg/kg)':<20} | R^2=0.583 (Tier D) | R^2=0.810 (Tier C)* | R^2=0.684, RPD=1.78 (Tier C)")
-    print(f"  {'Ext. K (mg/kg)':<20} | R^2=0.621 (Tier D) | R^2=0.770 (Tier C)* | R^2=0.712, RPD=1.86 (Tier C)")
+    print(f"  {'Total N (g/kg)':<20} | R^2=0.742 (Tier C) | R^2=0.940 (Tier A)* | R^2=0.835, RPD=2.46 (Tier C)")
+    print(f"  {'Avail. P (mg/kg)':<20} | R^2=0.583 (Tier D) | R^2=0.810 (Tier C)* | R^2=0.684, RPD=1.78 (Tier D)")
+    print(f"  {'Ext. K (mg/kg)':<20} | R^2=0.621 (Tier D) | R^2=0.770 (Tier C)* | R^2=0.712, RPD=1.86 (Tier D)")
     print("-" * 78)
-    print("  *Note: Cao et al. used random splitting (spatial leakage). Our model enforces")
-    print("   SpatialBlockCV (50 km blocks) to guarantee true out-of-region generalizability.")
+    print("  *Note: Cao et al. used random splitting (optimistic spatial autocorrelation).")
+    print("   Our model enforces SpatialBlockCV (50 km blocks) for true geographic generalization.")
 
     # Artifacts & Documentation
     print("\n" + "=" * 78)
